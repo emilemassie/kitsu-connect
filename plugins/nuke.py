@@ -1,4 +1,5 @@
 import os, sys, subprocess
+from PyQt6 import QtGui
 
 class Plugin:
     def __init__(self, parent):
@@ -7,6 +8,7 @@ class Plugin:
         # Define name of the plugin app
         self.name = 'Nuke 14.0v3'
         self.icon = './icons/nuke.png'
+        self.extension = '.nk'
         # Takes the path for the executable file
         self.exec = self.getExec()
         self.args = '- x'
@@ -47,4 +49,25 @@ class Plugin:
             raise NameError("Unknown operating system.")
         
         return exec
+    
+    def tree_right_click_action(self, menu, item):
+        item_type = None
+        icon = QtGui.QIcon(self.icon)
+        if item.whatsThis().startswith('SEQUENCE:'):
+            return
+        if item.whatsThis().startswith('SHOT:'):
+            return
+        if item.whatsThis().startswith('TASK:'):
+            menu.addAction(icon, 'Create New Nuke Script', self.create_new_script)
+        if item.whatsThis().startswith('FILE:'):
+            menu.addAction(icon, 'Open in Nuke', self.open_script)
+        
+        
+
+    def create_new_script(self):
+        print('test')
+    
+    def open_script(self):
+        args = ''
+        self.launch()
 

@@ -60,7 +60,7 @@ class kitsu_connect(QtWidgets.QWidget):
         self.asset_tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.asset_tree.customContextMenuRequested.connect(self.asset_right_click_menu)
         self.my_task_tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        self.my_task_tree.customContextMenuRequested.connect(self.shot_right_click_menu)
+        self.my_task_tree.customContextMenuRequested.connect(self.task_right_click_menu)
 
         self.my_task_tree.doubleClicked.connect(self.set_context)
         self.project_box.currentTextChanged.connect(self.update_trees)
@@ -225,15 +225,18 @@ class kitsu_connect(QtWidgets.QWidget):
         print(app,context_id)
         subprocess.call(app['exec'], env=app['environ'])
         
-    def shot_right_click_menu(self, position):
+    def task_right_click_menu(self, position):
         menu = QtWidgets.QMenu()
 
         index = self.my_task_tree.currentIndex()
         item = self.my_task_tree_model.itemFromIndex(index)
-        if item.whatsThis():
-            for plugin in self.plugins:
-                icon = QtGui.QIcon(plugin.icon)
-                menu.addAction(icon, plugin.name, plugin.launch)
+        print (item, index)
+        for plugin in self.plugins:
+            try:
+                plugin.tree_right_click_action(menu, item)
+            except:
+                pass
+                
         #    for app in self.plugin_settings:
         #        menu.addAction('Launch '+app, lambda: self.launch_app(self.plugin_settings[app], item.whatsThis()))
             #menu.addAction('Get asset path', self.show_asset_path)
@@ -289,6 +292,11 @@ class kitsu_connect(QtWidgets.QWidget):
                 sequence = 'ASSETS TASKS'
 
             sequence_item = QtGui.QStandardItem(sequence)
+            for x in gazu.shot.all_sequences_for_project(self.project):
+                if x['name'] == sequence:
+                    seq_id = x['id']
+                    sequence_item.setWhatsThis('SEQUENCE:'+seq_id)
+            sequence_item.setIcon(QtGui.QIcon('./icons/film.svg'))
             sequence_item.setEditable(False)
             rootNode.appendRow(sequence_item)
 
@@ -310,12 +318,12 @@ class kitsu_connect(QtWidgets.QWidget):
                     gazu.files.download_preview_file_thumbnail(preview_id, img_file_path)
                     image = QtGui.QImage(img_file_path)
 
-                    
                 except:
                     image = QtGui.QImage(16, 9, QtGui.QImage.Format.Format_RGB32)
 
                 shot_item.setData(image.scaled(64,27,Qt.AspectRatioMode.KeepAspectRatioByExpanding),Qt.ItemDataRole.DecorationRole)
                 shot_item.setEditable(False)
+                shot_item.setWhatsThis('SHOT:'+shot_kitsu['id'])
                 sequence_item.appendRow(shot_item)
 
                 for task in shots[shot]:
@@ -324,10 +332,24 @@ class kitsu_connect(QtWidgets.QWidget):
                         QCoreApplication.processEvents()
                     if task['project_name'] == self.project_box.currentText():
                         task_item = QtGui.QStandardItem(task['task_type_name'])
-                        task_item.setWhatsThis(task['id'])
-                        
+                        task_item.setWhatsThis('TASK:'+task['id'])
                         task_item.setEditable(False)
+                        task_item.setIcon(QtGui.QIcon('./icons/list.svg'))
                         shot_item.appendRow(task_item)
+                        if self.project_root != None:
+                            folder_path = os.path.join(self.project_root, 'shots',sequence,shot,task['task_type_name'], 'project')
+                            os.makedirs(folder_path, exist_ok=True)
+                            versions = os.listdir(folder_path)
+                            for version in versions :
+                                for file in os.listdir(os.path.join(folder_path, version)):
+                                    for plugin in self.plugins:
+                                        if file.endswith(plugin.extension):
+                                            version_item = QtGui.QStandardItem(file)
+                                            version_item.setEditable(False)
+                                            version_item.setIcon(QtGui.QIcon(plugin.icon))
+                                            version_item.setWhatsThis('FILE:'+str(os.path.join(folder_path, version, file)))
+                                            task_item.appendRow(version_item)
+
             
         self.my_task_tree.setModel(self.my_task_tree_model)
 
