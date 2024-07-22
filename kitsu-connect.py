@@ -9,9 +9,26 @@ import subprocess
 
 
 
+
+
 root_folder = os.path.dirname(__file__)
 sys.path.insert(0, root_folder)
-sys.path.insert(0, os.path.join(root_folder, 'site-packages'))
+
+
+if os.name == 'nt':
+            os_platform = 'win'
+elif os.name == 'posix':
+    if sys.platform == 'darwin':
+        os_platform = 'mac'
+    else:
+        os_platform = 'lin'
+else:
+    raise NameError("Unknown operating system.")
+
+
+
+
+sys.path.insert(0, os.path.join(root_folder, 'site-packages', os_platform))
 
 import gazu
 from core import settings
