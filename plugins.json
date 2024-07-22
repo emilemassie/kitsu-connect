@@ -1,0 +1,16 @@
+{
+    "NUKE": {
+        "exec": "/Applications/Nuke15.0v4/NukeX15.0v4.app/Nuke15.0 --nukex",
+        "expr": "",
+        "environ": {
+            "NUKE_PLUGIN_PATH": "",
+            "OCIO": ""
+            }
+        },
+    "BLENDER": {
+        "exec": "/Applications/Nuke15.0v4/NukeX15.0v4.app",
+        "expr": "",
+        "environ": {
+            }
+        }
+}
