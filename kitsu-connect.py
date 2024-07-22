@@ -47,6 +47,8 @@ class kitsu_connect(QtWidgets.QWidget):
         uic.loadUi(os.path.join(self.root_folder, 'ui', 'kitsu-connect.ui'), self)
         self.setWindowTitle("KITSU - CONNECT")
         self.setWindowIcon(QtGui.QIcon(os.path.join(self.root_folder,'icons','icon.png')))
+        self.apps_tab.setVisible(False)
+
 
         # Grab Plugins
         self.plugins = []
@@ -136,19 +138,53 @@ class kitsu_connect(QtWidgets.QWidget):
         if self.ps.getInfos():
             self.ps.show()
 
+    def build_plugin_shelf(self):
+        self.apps_tab
+        layout = self.apps_tab.layout()
+        while layout.count():
+            item = layout.takeAt(0)
+            widget = item.widget()
+            if widget:
+                widget.deleteLater()
+            else:
+                # If the item is a layout, recursively delete its children
+                sub_layout = item.layout()
+                if sub_layout:
+                    while sub_layout.count():
+                        sub_item = sub_layout.takeAt(0)
+                        sub_widget = sub_item.widget()
+                        if sub_widget:
+                            sub_widget.deleteLater()
+
+        for plugin in self.plugins:
+            app_button = QtWidgets.QToolButton()
+            app_button.setText(plugin.name)
+            app_button.setToolButtonStyle(QtCore.Qt.ToolButtonStyle.ToolButtonTextUnderIcon)
+            app_button.setIcon(QtGui.QIcon(plugin.icon))
+            app_button.setIconSize(QtCore.QSize(50,50))
+            app_button.released.connect(plugin.launch)
+            layout.addWidget(app_button)
+            
+            
+
+
     def set_context(self, index):
         item = index.model().itemFromIndex(index)
         id = item.whatsThis()
+        self.build_plugin_shelf()
         try:
             task = gazu.task.get_task(id)
             context = f"{task['project']['name']} : {task['sequence']['name']} : {task['entity']['name']} : {task['task_type']['name']}".upper()
             self.context_id = id
             self.context_set = True
             self.context_label.setText(context)
+            
+            self.apps_tab.setVisible(True)
         except:
             self.context_id = None
             self.context_set = False
             self.context_label.setText('')
+            self.apps_tab.setVisible(False)
 
     def get_asset_path(self):
         index = self.asset_tree.currentIndex()
