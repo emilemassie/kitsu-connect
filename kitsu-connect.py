@@ -1,14 +1,6 @@
 
 import sys, os, json
-from PyQt6 import uic, QtCore, QtSvg
-from PyQt6 import QtWidgets
-from PyQt6.QtCore import Qt, QCoreApplication
-from PyQt6 import QtGui
-
 import subprocess
-
-
-
 
 
 root_folder = os.path.dirname(__file__)
@@ -25,17 +17,17 @@ elif os.name == 'posix':
 else:
     raise NameError("Unknown operating system.")
 
-
-
-
 sys.path.insert(0, os.path.join(root_folder, 'site-packages', os_platform))
+
+from PyQt6 import uic, QtCore, QtSvg
+from PyQt6 import QtWidgets
+from PyQt6.QtCore import Qt, QCoreApplication
+from PyQt6 import QtGui
 
 import gazu
 from core import settings
 from core.project_settings import project_settings
 from core.plugins import KitsuConnectPlugins
-
-
 
 
 class kitsu_connect(QtWidgets.QWidget):
