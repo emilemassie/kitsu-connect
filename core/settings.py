@@ -36,6 +36,10 @@ class kitsu_connect_settings:
                 gazu.client.set_host(self.settings_dict['host']+'/api')
                 gazu.log_in(self.settings_dict['username'], self.settings_dict['password'])
 
+                self.connect_window.access_token = gazu.refresh_token()['access_token']
+                os.environ['KITSU_ACCESS_TOKEN'] = self.connect_window.access_token
+                
+
                 self.connect_window.set_status('Connected !!!', False)
                 self.connect_window.connectionStatus.setText('<html><head/><body><p><span style=" font-size:10pt; color:#008F00;">Connected !!!</span></p></body></html>')
 

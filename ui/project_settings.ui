@@ -22,7 +22,6 @@ background-color: #36393f;</string>
     <widget class="QTableWidget" name="table">
      <property name="styleSheet">
       <string notr="true">border-color:white;
-border-size:1pt;
 gridline-color: #fffff8;</string>
      </property>
      <property name="frameShape">
