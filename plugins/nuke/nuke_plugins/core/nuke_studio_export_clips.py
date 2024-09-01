@@ -163,6 +163,7 @@ class studio_timeline_exporter(QMainWindow):
 
         self.files_to_copy = []
 
+
         for row in range(self.ui.tableWidget.rowCount()):
             
             sequence = gazu.shot.get_sequence_by_name(project, self.ui.tableWidget.cellWidget(row, 0).currentText())
