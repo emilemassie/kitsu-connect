@@ -76,8 +76,7 @@ class Plugin:
         studio_button = kitsu_plugin_button('Open Davinci Resolve')
         studio_button.set_button_icon(self.icon)
         studio_button.released.connect(lambda: self.open_script())
-        buttons.append(studio_button)
-
+        # buttons.append(studio_button)
         return buttons
         version = 1
 

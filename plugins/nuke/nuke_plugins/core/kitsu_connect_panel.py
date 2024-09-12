@@ -1,10 +1,10 @@
 import nuke
 import nukescripts
+import os, sys
+
 import gazu
 
 from nukescripts import panels
-
-import os
 
 from PySide2 import QtCore, QtGui, QtWidgets, QtUiTools
 
@@ -56,7 +56,7 @@ class kitsu_connect_panel(QtWidgets.QWidget):
     def __init__(self):
         QtWidgets.QWidget.__init__(self)
         # load the ui file
-        self.ui = QtUiTools.QUiLoader().load(QtCore.QFile(r'C:\Users\User\Documents\GitHub\kitsu-connect\plugins\nuke\nuke_plugins\ui\kitsu_connect_panel.ui'), self)
+        self.ui = QtUiTools.QUiLoader().load(QtCore.QFile(os.path.join(os.path.dirname(os.path.dirname(__file__)), 'ui', 'kitsu_connect_panel.ui')), self)
 
         self.setLayout(self.ui.layout())
         
@@ -88,18 +88,17 @@ class kitsu_connect_panel(QtWidgets.QWidget):
             os.makedirs(shot_folder, exist_ok=True)
 
         # Create the QFileSystemModel
-        self.model = QtWidgets.QFileSystemModel()
-        self.model.setRootPath(QtCore.QDir.rootPath())
+        self.model_media = QtWidgets.QFileSystemModel()
+        self.model_media.setRootPath(QtCore.QDir.rootPath())
 
         # Create the QTreeView
-        self.ui.media_tree.setModel(self.model)
+        self.ui.media_tree.setModel(self.model_media)
 
         # Set the icons for folders and files
-        self.ui.media_tree.setRootIndex(self.model.index(QtCore.QDir.rootPath()))
+        self.ui.media_tree.setRootIndex(self.model_media.index(shot_folder))
         self.ui.media_tree.setAnimated(True)
         self.ui.media_tree.setSortingEnabled(True)
-
-        self.ui.media_tree.setRootIndex(self.model.index(shot_folder))
+        self.ui.media_tree.expand(0)
 
     def build_save_load(self):
         shot_folder = os.path.join(self.project_root, 'shots', self.sequence, self.shot, 'project_files' )
@@ -119,4 +118,5 @@ class kitsu_connect_panel(QtWidgets.QWidget):
         self.ui.save_load_tree.setSortingEnabled(True)
 
         self.ui.save_load_tree.setRootIndex(self.model.index(shot_folder))
+        self.ui.save_load_tree.expandAll()
 

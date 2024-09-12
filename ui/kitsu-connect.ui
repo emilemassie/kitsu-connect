@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>777</width>
-    <height>940</height>
+    <width>814</width>
+    <height>809</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -334,6 +334,28 @@ background-color: #36393f;</string>
       <layout class="QVBoxLayout" name="verticalLayout_3">
        <item>
         <widget class="QTabWidget" name="tabWidget">
+         <property name="styleSheet">
+          <string notr="true">QTabWidget::pane {
+  border: 1px solid lightgray;
+
+} 
+
+QTabBar::tab {
+  background-color: rgb(54, 57, 63);
+  border: 1px solid lightgray; 
+  padding:2px 10px;
+} 
+
+QTabBar::tab:selected { 
+  background-color: rgb(253, 128, 8);
+  margin-bottom: -1px; 
+}
+
+font: 12pt &quot;Open-Sans&quot;;
+color: #eeeeee;
+selection-background-color: rgb(253, 128, 8);
+background-color: #36393f;</string>
+         </property>
          <property name="currentIndex">
           <number>0</number>
          </property>
@@ -391,27 +413,36 @@ background-color: #36393f;</string>
            </item>
           </layout>
          </widget>
-         <widget class="QWidget" name="assets_tab">
+         <widget class="QWidget" name="files_tab">
           <attribute name="title">
-           <string>Assets</string>
+           <string>Files</string>
           </attribute>
           <layout class="QVBoxLayout" name="verticalLayout_7">
            <item>
-            <widget class="QTreeView" name="asset_tree">
-             <property name="headerHidden">
+            <widget class="QTreeView" name="files_tree">
+             <property name="styleSheet">
+              <string notr="true">QHeaderView::section {
+	background-color: rgb(54, 57, 63);
+	border: 1px solid #6c6c6c;
+    padding-left: 4px
+}
+</string>
+             </property>
+             <property name="dragDropMode">
+              <enum>QAbstractItemView::DragDrop</enum>
+             </property>
+             <property name="defaultDropAction">
+              <enum>Qt::CopyAction</enum>
+             </property>
+             <property name="selectionBehavior">
+              <enum>QAbstractItemView::SelectItems</enum>
+             </property>
+             <property name="sortingEnabled">
               <bool>true</bool>
              </property>
-             <attribute name="headerVisible">
-              <bool>false</bool>
-             </attribute>
             </widget>
            </item>
           </layout>
-         </widget>
-         <widget class="QWidget" name="medias_tab">
-          <attribute name="title">
-           <string>Medias</string>
-          </attribute>
          </widget>
          <widget class="QWidget" name="settings_tab">
           <attribute name="title">
@@ -577,6 +608,187 @@ background-color: #36393f;</string>
         </widget>
        </item>
        <item>
+        <widget class="QGroupBox" name="asset_info_tab">
+         <property name="sizePolicy">
+          <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
+           <horstretch>0</horstretch>
+           <verstretch>0</verstretch>
+          </sizepolicy>
+         </property>
+         <property name="maximumSize">
+          <size>
+           <width>16777215</width>
+           <height>50</height>
+          </size>
+         </property>
+         <property name="title">
+          <string>ASSET INFO</string>
+         </property>
+         <property name="alignment">
+          <set>Qt::AlignCenter</set>
+         </property>
+         <property name="flat">
+          <bool>false</bool>
+         </property>
+         <layout class="QHBoxLayout" name="horizontalLayout_7">
+          <property name="spacing">
+           <number>12</number>
+          </property>
+          <property name="leftMargin">
+           <number>12</number>
+          </property>
+          <property name="topMargin">
+           <number>12</number>
+          </property>
+          <property name="rightMargin">
+           <number>12</number>
+          </property>
+          <property name="bottomMargin">
+           <number>12</number>
+          </property>
+          <item>
+           <widget class="QGroupBox" name="groupBox_6">
+            <property name="minimumSize">
+             <size>
+              <width>180</width>
+              <height>0</height>
+             </size>
+            </property>
+            <property name="title">
+             <string>Asset informations</string>
+            </property>
+            <layout class="QVBoxLayout" name="verticalLayout_13">
+             <item>
+              <widget class="QLabel" name="asset_info_image">
+               <property name="minimumSize">
+                <size>
+                 <width>0</width>
+                 <height>120</height>
+                </size>
+               </property>
+               <property name="baseSize">
+                <size>
+                 <width>160</width>
+                 <height>90</height>
+                </size>
+               </property>
+               <property name="text">
+                <string/>
+               </property>
+               <property name="alignment">
+                <set>Qt::AlignCenter</set>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <widget class="Line" name="line_7">
+               <property name="frameShadow">
+                <enum>QFrame::Plain</enum>
+               </property>
+               <property name="orientation">
+                <enum>Qt::Horizontal</enum>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <layout class="QVBoxLayout" name="verticalLayout_14">
+               <item>
+                <layout class="QFormLayout" name="formLayout_9">
+                 <item row="0" column="0">
+                  <widget class="QLabel" name="label_27">
+                   <property name="text">
+                    <string>Name</string>
+                   </property>
+                  </widget>
+                 </item>
+                 <item row="0" column="1">
+                  <widget class="QLabel" name="asset_info_name">
+                   <property name="styleSheet">
+                    <string notr="true">color: rgb(192, 192, 192);</string>
+                   </property>
+                   <property name="text">
+                    <string>shot_name</string>
+                   </property>
+                   <property name="alignment">
+                    <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
+                   </property>
+                  </widget>
+                 </item>
+                 <item row="1" column="0">
+                  <widget class="QLabel" name="label_28">
+                   <property name="text">
+                    <string>Task ID</string>
+                   </property>
+                  </widget>
+                 </item>
+                 <item row="1" column="1">
+                  <widget class="QLabel" name="asset_info_id">
+                   <property name="styleSheet">
+                    <string notr="true">color: rgb(192, 192, 192);</string>
+                   </property>
+                   <property name="text">
+                    <string>task_id</string>
+                   </property>
+                   <property name="alignment">
+                    <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
+                   </property>
+                  </widget>
+                 </item>
+                </layout>
+               </item>
+              </layout>
+             </item>
+            </layout>
+           </widget>
+          </item>
+          <item>
+           <widget class="QGroupBox" name="action_box_3">
+            <property name="minimumSize">
+             <size>
+              <width>200</width>
+              <height>0</height>
+             </size>
+            </property>
+            <property name="title">
+             <string>Versions</string>
+            </property>
+            <layout class="QVBoxLayout" name="_4">
+             <item>
+              <widget class="QComboBox" name="asset_version_list"/>
+             </item>
+             <item>
+              <spacer name="verticalSpacer_3">
+               <property name="orientation">
+                <enum>Qt::Vertical</enum>
+               </property>
+               <property name="sizeHint" stdset="0">
+                <size>
+                 <width>20</width>
+                 <height>40</height>
+                </size>
+               </property>
+              </spacer>
+             </item>
+             <item>
+              <layout class="QVBoxLayout" name="asset_action_box_layout"/>
+             </item>
+             <item>
+              <widget class="QPushButton" name="asset_openDir">
+               <property name="enabled">
+                <bool>false</bool>
+               </property>
+               <property name="text">
+                <string>Open Directory</string>
+               </property>
+              </widget>
+             </item>
+            </layout>
+           </widget>
+          </item>
+         </layout>
+        </widget>
+       </item>
+       <item>
         <widget class="QGroupBox" name="shot_info_tab">
          <property name="sizePolicy">
           <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
@@ -587,7 +799,7 @@ background-color: #36393f;</string>
          <property name="maximumSize">
           <size>
            <width>16777215</width>
-           <height>16777215</height>
+           <height>50</height>
           </size>
          </property>
          <property name="title">
@@ -882,30 +1094,6 @@ background-color: #36393f;</string>
             </layout>
            </widget>
           </item>
-         </layout>
-        </widget>
-       </item>
-       <item>
-        <widget class="QGroupBox" name="apps_tab">
-         <property name="sizePolicy">
-          <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
-           <horstretch>0</horstretch>
-           <verstretch>0</verstretch>
-          </sizepolicy>
-         </property>
-         <property name="maximumSize">
-          <size>
-           <width>16777215</width>
-           <height>16777215</height>
-          </size>
-         </property>
-         <property name="title">
-          <string>Launch Apps :</string>
-         </property>
-         <layout class="QHBoxLayout" name="horizontalLayout_4">
-          <property name="sizeConstraint">
-           <enum>QLayout::SetMinimumSize</enum>
-          </property>
          </layout>
         </widget>
        </item>

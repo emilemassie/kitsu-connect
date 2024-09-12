@@ -6,18 +6,7 @@ import subprocess
 root_folder = os.path.dirname(__file__)
 sys.path.insert(0, root_folder)
 
-
-if os.name == 'nt':
-            os_platform = 'win'
-elif os.name == 'posix':
-    if sys.platform == 'darwin':
-        os_platform = 'mac'
-    else:
-        os_platform = 'lin'
-else:
-    raise NameError("Unknown operating system.")
-
-site_packages = os.path.join(root_folder, 'site-packages', os_platform)
+site_packages = os.path.join(root_folder, 'site-packages')
 
 sys.path.insert(0,site_packages)
 
@@ -51,7 +40,10 @@ class kitsu_tree_item(QtGui.QStandardItem):
             if item_type == 'Shot':
                 filepath = os.path.join(self.project_root,'shots', self.kitsu_item['sequence_name'],self.kitsu_item['name'])
             if item_type =='Task':
-                filepath = os.path.join(self.project_root,'shots', self.kitsu_item['sequence_name'], self.kitsu_item['entity_name'], 'project_files',self.kitsu_item['task_type_name'])
+                if self.kitsu_item['task_type_for_entity'] == 'Shot':
+                    filepath = os.path.join(self.project_root,'shots', self.kitsu_item['sequence_name'], self.kitsu_item['entity_name'], 'project_files',self.kitsu_item['task_type_name'])
+                elif self.kitsu_item['task_type_for_entity'] == 'Asset':
+                    filepath = os.path.join(self.project_root,'assets', self.kitsu_item['entity_name'], self.kitsu_item['task_type_name'], 'project_files')
         return filepath
 
 class kitsu_plugin_button(QtWidgets.QPushButton):
@@ -72,8 +64,10 @@ class kitsu_connect(QtWidgets.QWidget):
         uic.loadUi(os.path.join(self.root_folder, 'ui', 'kitsu-connect.ui'), self)
         self.setWindowTitle("KITSU - CONNECT")
         self.setWindowIcon(QtGui.QIcon(os.path.join(self.root_folder,'icons','icon.png')))
-        self.apps_tab.setVisible(False)
         self.shot_info_tab.setVisible(False)
+        self.shot_info_tab.setMaximumHeight(500)
+        self.asset_info_tab.setVisible(False)
+        self.asset_info_tab.setMaximumHeight(500)
         self.project_settings_button.setIcon(QtGui.QIcon(os.path.join(self.root_folder, 'icons', 'tool.svg')))
         self.refresh_button.setIcon(QtGui.QIcon(os.path.join(self.root_folder, 'icons', 'rotate-cw.svg')))
 
@@ -83,7 +77,6 @@ class kitsu_connect(QtWidgets.QWidget):
         self.load_plugins()
 
         # Load Settings
-        
         self.access_token = None
         os.environ['KITSU_CONNECT_PACKAGES'] = site_packages
         self.settings = settings.kitsu_connect_settings(self)
@@ -96,8 +89,8 @@ class kitsu_connect(QtWidgets.QWidget):
         self.loading_icon_label.setMovie(self.loading_icon_movie)
 
         # Connect actions 
-        self.asset_tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        self.asset_tree.customContextMenuRequested.connect(self.asset_right_click_menu)
+        self.files_tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.files_tree.customContextMenuRequested.connect(self.asset_right_click_menu)
         self.my_task_tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.my_task_tree.customContextMenuRequested.connect(self.task_right_click_menu)
         self.refresh_button.released.connect(self.update_trees)
@@ -129,12 +122,18 @@ class kitsu_connect(QtWidgets.QWidget):
         self.my_task_tree.expand(index)
     
     def task_item_doubleclicked(self, item):
-        file = self.version_list.currentText().split('/')
+        if item.kitsu_item['task_type_for_entity'] == 'Shot':
+            file = self.version_list.currentText().split('/')
+            box = self.action_box_layout
+        elif item.kitsu_item['task_type_for_entity'] == 'Asset':
+            box = self.asset_action_box_layout
+            file = self.asset_version_list.currentText().split('/')
+
         folder_path = item.get_path()
 
         # Clear all the layout
-        while self.action_box_layout.count():
-            witem = self.action_box_layout.takeAt(0)
+        while box.count():
+            witem = box.takeAt(0)
             widget = witem.widget()
             if widget is not None:
                 widget.deleteLater()
@@ -150,7 +149,7 @@ class kitsu_connect(QtWidgets.QWidget):
             if '.'+file[-1].rsplit('.',1)[-1] == plugin.extension:
                 file_path = os.path.join(folder_path, file[0], file[1])
             for button in plugin.get_push_buttons(item, file_path):
-                self.action_box_layout.addWidget(button)
+                box.addWidget(button)
         return True
 
     def load_plugins(self):
@@ -197,14 +196,16 @@ class kitsu_connect(QtWidgets.QWidget):
 
         #self.setWindowFlag(Qt.WindowType.FramelessWindowHint)
 
-
     def open_project_settings(self):
-        self.ps = project_settings(self)
-        if self.ps.getInfos():
-            self.ps.show()
+        if self.good_settings:
+            self.ps = project_settings(self)
+            if self.ps.getInfos():
+                self.ps.show()
+                return
+        else:
+            return
 
     def build_plugin_shelf(self):
-        self.apps_tab
         layout = self.apps_tab.layout()
         while layout.count():
             item = layout.takeAt(0)
@@ -230,7 +231,6 @@ class kitsu_connect(QtWidgets.QWidget):
             app_button.released.connect(plugin.launch)
             layout.addWidget(app_button)
             
-
     def get_item_file_path(self, item):
         filepath = None
         if item.type == 'Sequence':
@@ -240,14 +240,21 @@ class kitsu_connect(QtWidgets.QWidget):
             filepath = os.path.join(self.project_root,'shots', shot['sequence_name'],shot['name'])
         elif item.type =='Task':
             task = gazu.task.get_task(item.id)
-            filepath = os.path.join(self.project_root,'shots', task['sequence']['name'], task['entity']['name'], 'project_files',task['task_type']['name'])
+            if item.kitsu_item['task_type_for_entity'] == 'Shot':
+                filepath = os.path.join(self.project_root,'shots', task['sequence']['name'], task['entity']['name'], 'project_files',task['task_type']['name'])
+            elif item.kitsu_item['task_type_for_entity'] == 'Asset':
+                filepath = os.path.join(self.project_root,'assets', task['entity']['name'], task['task_type']['name'],'project_files')
         return filepath
 
     def set_context(self, index):
+
         item = index.model().itemFromIndex(index)
         id = item.id
+
         if item.kitsu_item:
+
             context = ''
+
             if item.type == 'Sequence':
                 context = f"{self.project['name']} : {item.text()}".upper()
                 self.shot_info_tab.setVisible(False)
@@ -257,8 +264,12 @@ class kitsu_connect(QtWidgets.QWidget):
                 self.shot_info_tab.setVisible(False)
             elif item.type == 'Task':
                 task = gazu.task.get_task(id)
-                context = f"{task['project']['name']} : {task['sequence']['name']} : {task['entity']['name']} : {task['task_type']['name']}".upper()
-                self.set_shot_tab(item)
+                if item.kitsu_item['task_type_for_entity'] == 'Shot':
+                    context = f"{task['project']['name']} : {task['sequence']['name']} : {task['entity']['name']} : {task['task_type']['name']}".upper()
+                    self.set_shot_tab(item)
+                elif item.kitsu_item['task_type_for_entity'] == 'Asset':
+                    context = f"{task['project']['name']} : Assets : {task['entity']['name']} : {task['task_type']['name']}".upper()
+                    self.set_asset_tab(item)
                 #self.build_plugin_shelf()
             self.context_label.setText(context) 
             self.context_id = id
@@ -421,11 +432,63 @@ class kitsu_connect(QtWidgets.QWidget):
             
             self.task_item_doubleclicked(item)
             self.version_list.clear()
-            self.version_list.addItems(items)
             self.version_list.currentTextChanged.connect(lambda: self.task_item_doubleclicked(item))
+            self.version_list.addItems(items)
             
-
+            
+            self.asset_info_tab.setVisible(False)
             self.shot_info_tab.setVisible(True)
+            
+        else:
+            dlg = QtWidgets.QMessageBox(self)
+            dlg.setWindowTitle('No Project Root')
+            dlg.setText("There is no project root set on the project.\nPlease set a project root")
+            button = dlg.exec()
+
+    def set_asset_tab(self, item):
+        task = item.kitsu_item
+        asset =  gazu.asset.get_asset(task['entity_id'])
+
+        self.asset_info_name.setText(asset['name'])
+        self.asset_info_id.setText(asset['id'])
+
+        img_path = os.path.join(root_folder, '.cache_images', asset['project_name'], 'assets', asset['name']+'_preview.jpeg')
+        pixmap = QtGui.QPixmap(img_path)
+        self.asset_info_image.setPixmap(pixmap)
+
+        # get versions
+        if self.project_root:
+            version_folder = self.get_item_file_path(item)
+            self.asset_version_list.currentTextChanged.connect(lambda: None)
+
+            self.asset_version_list.clear()
+            items = []
+
+            if not os.path.exists(version_folder):
+                os.makedirs(version_folder)
+
+
+            for version in os.listdir(version_folder):
+                file_path = os.path.join(version_folder, version)
+
+                # add plugin buttons
+                for plugin in self.plugins:
+                    if os.path.isdir(file_path):
+                        for file in os.listdir(file_path):
+                            if '.'+file.rsplit('.',1)[-1] == plugin.extension:
+                                items.append(os.path.basename(file_path)+'/'+file)
+
+            items.sort(reverse=True)
+            self.asset_version_list.currentTextChanged.disconnect()
+        
+            self.task_item_doubleclicked(item)
+            self.asset_version_list.clear()
+            self.asset_version_list.currentTextChanged.connect(lambda: self.task_item_doubleclicked(item))
+            self.asset_version_list.addItems(items)
+            
+            
+            self.shot_info_tab.setVisible(False)
+            self.asset_info_tab.setVisible(True)
         else:
             dlg = QtWidgets.QMessageBox(self)
             dlg.setWindowTitle('No Project Root')
@@ -433,6 +496,32 @@ class kitsu_connect(QtWidgets.QWidget):
             button = dlg.exec()
 
     def update_trees(self):
+        self.update_task_tree()
+        self.update_file_tree()
+
+    def update_file_tree(self):
+        if not self.project_root:
+            return 
+        if not os.path.exists(self.project_root):
+            return
+
+
+        model = QtGui.QFileSystemModel()
+        model.setRootPath(self.project_root)
+        model.sort(0, Qt.SortOrder.AscendingOrder)
+        sorting_model = QtCore.QSortFilterProxyModel()
+        sorting_model.setSourceModel(model)
+
+        self.files_tree.header().setSectionResizeMode(QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
+        
+        self.files_tree.setModel(sorting_model)
+        self.files_tree.setRootIndex(sorting_model.mapFromSource(model.index(self.project_root)))
+        #self.files_tree.header().setSortIndicator(0, endingOrder)
+        self.files_tree.setSortingEnabled(True)
+        self.files_tree.resizeColumnToContents(0)
+        self.files_tree.setAcceptDrops(True)
+
+    def update_task_tree(self):
         
         if not self.good_settings:
             return
@@ -529,39 +618,9 @@ class kitsu_connect(QtWidgets.QWidget):
                             folder_path = os.path.join(self.project_root, 'shots',sequence,shot,'project_files',task['task_type_name'])
                             os.makedirs(folder_path, exist_ok=True)
 
-
-
-        # ASSET TREE MODEL
-
         self.my_task_tree.setModel(self.my_task_tree_model)
-
-        # set asset tree
-        self.asset_tree_model = QtGui.QStandardItemModel()
-        rootNode = self.asset_tree_model.invisibleRootItem()
-
-        asset_list = gazu.asset.all_assets_for_project(self.project)
-
-        for asset in asset_list:
-            asset_item = QtGui.QStandardItem(asset['name'])
-            try:
-                preview_id = asset['preview_file_id']
-                img_file_path = os.path.join(root_folder,'.cache_images',self.project_box.currentText(),'assets',asset['name']+'_preview.jpeg')
-                os.makedirs(os.path.dirname(img_file_path), exist_ok=True)
-                gazu.files.download_preview_file_thumbnail(preview_id, img_file_path)
-                image = QtGui.QImage(img_file_path)
-            except:
-                image = QtGui.QImage(16, 9, QtGui.QImage.Format.Format_RGB32)
-            
-            asset_item.setData(image.scaled(64,27,Qt.AspectRatioMode.KeepAspectRatioByExpanding),Qt.ItemDataRole.DecorationRole)
-            asset_item.setEditable(False)
-            asset_item.setWhatsThis(asset['id'])
-            rootNode.appendRow(asset_item)
-
-        self.asset_tree.setModel(self.asset_tree_model)
-
         self.set_status('Tree refreshed !', False)
         self.set_loading(False)
-
 
 if __name__ == '__main__':
     app = QtWidgets.QApplication(sys.argv)
