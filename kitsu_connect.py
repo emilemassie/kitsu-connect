@@ -71,6 +71,9 @@ class kitsu_connect(QtWidgets.QWidget):
         self.project_settings_button.setIcon(QtGui.QIcon(os.path.join(self.root_folder, 'icons', 'tool.svg')))
         self.refresh_button.setIcon(QtGui.QIcon(os.path.join(self.root_folder, 'icons', 'rotate-cw.svg')))
 
+        self.sequence_icon = QtGui.QIcon(os.path.join(self.root_folder,'icons','sequence.svg'))
+        self.task_icon = QtGui.QIcon(os.path.join(self.root_folder,'icons','task.svg'))
+
 
         # Grab Plugins
         self.plugins = []
@@ -569,7 +572,7 @@ class kitsu_connect(QtWidgets.QWidget):
                     sequence_item.kitsu_item = x
                     sequence_item.id = x['id']
                     sequence_item.type = x['type']
-            sequence_item.setIcon(QtGui.QIcon('./icons/sequence.svg'))
+            sequence_item.setIcon(self.sequence_icon)
             
             sequence_item.setEditable(False)
             rootNode.appendRow(sequence_item)
@@ -612,7 +615,7 @@ class kitsu_connect(QtWidgets.QWidget):
                         task_item.type = task['type']
                         task_item.kitsu_item = task
                         task_item.setEditable(False)
-                        task_item.setIcon(QtGui.QIcon('./icons/task.svg'))
+                        task_item.setIcon(self.task_icon)
                         shot_item.appendRow(task_item)
                         if self.project_root != None:
                             folder_path = os.path.join(self.project_root, 'shots',sequence,shot,'project_files',task['task_type_name'])
@@ -626,4 +629,5 @@ if __name__ == '__main__':
     app = QtWidgets.QApplication(sys.argv)
     window = kitsu_connect()
     window.show()
-    sys.exit(app.exec())
+    app.exec()
+    #sys.exit(app.exec())
