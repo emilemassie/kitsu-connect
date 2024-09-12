@@ -21,6 +21,7 @@ def show_qt_pane(widget_class, title, pane_id):
     pane_id: str
         Unique identifier of the panel. Should match what is used when using registerWidgetAsPanel.
     """
+    
     # Check if pane already exists.
     widgets = find_qt_widgets(pane_id)
     if widgets:
