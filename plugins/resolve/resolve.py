@@ -7,7 +7,7 @@ class Plugin:
 
         # Define name of the plugin app
         self.name = 'DaVinci Resolve'
-        self.icon = './icons/resolve.png'
+        self.icon = self.icon = os.path.join(parent.root_folder, 'icons', 'resolve.png')
         self.extension = '.drp'
         # Takes the path for the executable file
         self.exec = self.getExec()

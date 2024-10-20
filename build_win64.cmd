@@ -1,0 +1,2 @@
+@ECHO ON
+python -m PyInstaller --clean -y -n kitsu_connect --noconsole --onedir --icon=./icons/icon.png --add-data kitsu_connect.py:. --add-data ./icons:icons --add-data ./ui:ui --add-data ./core:core --add-data ./plugins:plugins --add-data ./site-packages:site-packages kitsu_connect.py

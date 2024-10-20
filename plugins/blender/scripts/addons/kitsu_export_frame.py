@@ -60,7 +60,7 @@ class KitsuExportFrame:
 
         status = gazu.task.get_task_status_by_short_name("wfa")
         task = gazu.task.get_task(os.environ['KITSU_CONTEXT_ID'])
-        comment = gazu.task.add_comment(task, status, f'Quick Jpeg export of : \n{os.path.basename(temp_filepath)}')
+        comment = gazu.task.add_comment(task, status, f'{os.path.basename(temp_filepath)}<br><br><u><b>Source file :</b></u><br>{bpy.data.filepath}\n<u><b>Scene Render Path :</u></b><br>{bpy.context.scene.render.filepath}')
 
         self.preview_file = gazu.task.add_preview(
                 task,

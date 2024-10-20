@@ -7,7 +7,7 @@ class Plugin:
 
         # Define name of the plugin app
         self.name = 'Blender'
-        self.icon = './icons/blender.png'
+        self.icon = self.icon = os.path.join(parent.root_folder, 'icons', 'blender.png')
         self.extension = '.blend'
         # Takes the path for the executable file
         self.exec = self.getExec()
@@ -79,7 +79,7 @@ class Plugin:
         nv_button.released.connect(lambda: self.create_new_script(item))
         buttons.append(nv_button)
 
-        if file_path:
+        if file_path and file_path.endswith(self.extension):
             nuke_button = kitsu_plugin_button('Open in Blender')
             nuke_button.set_button_icon(self.icon)
             nuke_button.released.connect(lambda: self.open_script(file_path))

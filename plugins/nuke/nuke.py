@@ -7,7 +7,7 @@ class Plugin:
 
         # Define name of the plugin app
         self.name = 'Nuke 14.0v3'
-        self.icon = './icons/nuke.png'
+        self.icon = os.path.join(parent.root_folder, 'icons', 'nuke.png')
         self.extension = '.nk'
         # Takes the path for the executable file
         self.exec = self.getExec()
@@ -105,15 +105,20 @@ class Plugin:
         buttons = []
 
         self.item = item
+
+        if item.kitsu_item['task_type_name'] not in ['Compositing', 'Paint & Roto']:
+            return buttons
+        
+        
         nv_button = kitsu_plugin_button('New Nuke Version')
         nv_button.set_button_icon(self.icon)
         nv_button.released.connect(lambda: self.create_new_script(item))
         buttons.append(nv_button)
 
-        studio_button = kitsu_plugin_button('Open Nuke Studio')
-        studio_button.set_button_icon(self.icon)
-        studio_button.released.connect(lambda: self.open_script(None,'-studio'))
-        buttons.append(studio_button)
+        #studio_button = kitsu_plugin_button('Open Nuke Studio')
+        #studio_button.set_button_icon(self.icon)
+        #studio_button.released.connect(lambda: self.open_script(None,'-studio'))
+        #buttons.append(studio_button)
 
         if file_path:
             nuke_button = kitsu_plugin_button('Open in Nuke')
