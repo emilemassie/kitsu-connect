@@ -1,633 +1,599 @@
-
-import sys, os, json
+import sys
 import subprocess
+import os, getpass
+import tempfile
+import json
+
+import requests
+import zipfile
+import shutil
+
+from PyQt5 import QtWidgets, QtCore, QtGui, uic, QtSvg
+from PyQt5.QtGui import QDoubleValidator
+from PyQt5.QtCore import Qt, QPoint, QObject, QThread, pyqtSignal, pyqtSlot
+from PyQt5.QtWidgets import QMessageBox
 
 
-root_folder = os.path.dirname(__file__)
-sys.path.insert(0, root_folder)
+from core.workers import *
+from core.settings import kitsu_settings
+from core.ui_elements import *
 
-site_packages = os.path.join(root_folder, 'site-packages')
-
-sys.path.insert(0,site_packages)
-
-from PyQt6 import uic, QtCore, QtSvg
-from PyQt6 import QtWidgets
-from PyQt6.QtCore import Qt, QCoreApplication
-from PyQt6 import QtGui
 
 import gazu
-from core import settings
-from core.project_settings import project_settings
-from core.plugins import KitsuConnectPlugins
 
 
-class kitsu_tree_item(QtGui.QStandardItem):
-    def __init__(self, project_root=None, text=''):
-        super().__init__(text)
-        self.id = None
-        self.file_path = None
-        self.name = None
-        self.image = None
-        self.kitsu_item = None
-        self.project_root = project_root
+_VERSION = "1.2.0"
+parent_folder = os.path.dirname(__file__)
 
-    def get_path(self):
-        filepath = None
-        if self.kitsu_item:
-            item_type = self.kitsu_item['type']
-            if item_type == 'Sequence':
-                filepath = os.path.join(self.project_root,'shots', self.kitsu_item['name'])
-            if item_type == 'Shot':
-                filepath = os.path.join(self.project_root,'shots', self.kitsu_item['sequence_name'],self.kitsu_item['name'])
-            if item_type =='Task':
-                if self.kitsu_item['task_type_for_entity'] == 'Shot':
-                    filepath = os.path.join(self.project_root,'shots', self.kitsu_item['sequence_name'], self.kitsu_item['entity_name'], 'project_files',self.kitsu_item['task_type_name'])
-                elif self.kitsu_item['task_type_for_entity'] == 'Asset':
-                    filepath = os.path.join(self.project_root,'assets', self.kitsu_item['entity_name'], self.kitsu_item['task_type_name'], 'project_files')
-        return filepath
 
-class kitsu_plugin_button(QtWidgets.QPushButton):
-    def __init__(self, text=''):
-        super().__init__(text)
-        self.file_path = None
-
-    def set_button_icon(self, img):
-        icon = QtGui.QIcon(img)
-        self.setIcon(icon)
-
-class kitsu_connect(QtWidgets.QWidget):
+class kitsu_connect(QtWidgets.QMainWindow):
     def __init__(self):
-        super(kitsu_connect, self).__init__()
+        super().__init__()
 
-        # UI SETUP
-        self.root_folder = os.path.dirname(__file__)
-        uic.loadUi(os.path.join(self.root_folder, 'ui', 'kitsu-connect.ui'), self)
-        self.setWindowTitle("KITSU - CONNECT")
-        self.setWindowIcon(QtGui.QIcon(os.path.join(self.root_folder,'icons','icon.png')))
+        QtCore.QDir.addSearchPath('icons', os.path.join(os.path.dirname(__file__), 'icons'))
+        uic.loadUi(os.path.join(parent_folder,'ui','kitsu-connect.ui'), self) 
+
+        # updates
+        self.current_version = _VERSION  # Set your current version here
+        self.version_label.setText(f'v{self.current_version}')
+        self.github_repo = "emilemassie/kitsu-publisher/releases/tags/standalone"  # Set your GitHub repo here
+
+        # Variables to track mouse position for dragging
+        self._isResizing = False
+        self._isDragging = False
+        self._dragPosition = QPoint()
+        self._resizeMargin = 10  # Margin around edges for resizing
+        self._dragArea = None
+
+
+        self.check_for_updates()
+
+
+
+        self.thread = QThread()
+
+        # Create a Worker object and pass the print_hello function
+        self.worker = Worker(self.refresh_tree)
+
+        # Move the worker to the thread
+        self.worker.moveToThread(self.thread)
+
+        # Connect signals and slots
+        self.thread.started.connect(self.worker.run)          # Start the worker's run method when the thread starts
+        self.worker.finished.connect(self.thread.quit)        # Quit the thread when the worker finishes
+
+        self.context = None
+        self.ks = kitsu_settings(self)
+        self.is_scanning = True
+
         self.shot_info_tab.setVisible(False)
-        self.shot_info_tab.setMaximumHeight(500)
-        self.asset_info_tab.setVisible(False)
-        self.asset_info_tab.setMaximumHeight(500)
-        self.project_settings_button.setIcon(QtGui.QIcon(os.path.join(self.root_folder, 'icons', 'tool.svg')))
-        self.refresh_button.setIcon(QtGui.QIcon(os.path.join(self.root_folder, 'icons', 'rotate-cw.svg')))
-
-        self.sequence_icon = QtGui.QIcon(os.path.join(self.root_folder,'icons','sequence.svg'))
-        self.task_icon = QtGui.QIcon(os.path.join(self.root_folder,'icons','task.svg'))
 
 
-        # Grab Plugins
-        self.plugins = []
-        self.load_plugins()
+        self.setWindowFlags(QtCore.Qt.WindowCloseButtonHint | QtCore.Qt.WindowMinimizeButtonHint)
+        self.setWindowIcon(QtGui.QIcon(os.path.join(os.path.dirname(__file__),'icons','icon.png')))
 
-        # Load Settings
-        self.access_token = None
-        os.environ['KITSU_CONNECT_PACKAGES'] = site_packages
-        self.settings = settings.kitsu_connect_settings(self)
-        self.good_settings = self.settings.load_settings()
-        #print(gazu.project.all_projects())
 
-        # Setup Loading Screen
-        self.loading_icon_movie = QtGui.QMovie(os.path.join(self.root_folder,'icons','loading_icon_2.gif'))
-        self.loading_icon_movie.start()
-        self.loading_icon_label.setMovie(self.loading_icon_movie)
+        # Remove the window frame and make the window transparent
+        self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
+        #self.setAttribute(Qt.WA_TranslucentBackground)
 
-        # Connect actions 
-        self.files_tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        self.files_tree.customContextMenuRequested.connect(self.asset_right_click_menu)
-        self.my_task_tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        self.my_task_tree.customContextMenuRequested.connect(self.task_right_click_menu)
-        self.refresh_button.released.connect(self.update_trees)
 
-        self.my_task_tree.doubleClicked.connect(self.set_context)
-        self.my_task_tree.clicked.connect(self.item_clicked)
-        self.project_box.currentTextChanged.connect(self.update_trees)
-        self.task_expend_button.pressed.connect(self.my_task_tree.expandAll)
-        self.task_collapse_button.pressed.connect(self.my_task_tree.collapseAll)
-        self.save_settings_button.pressed.connect(self.settings.save_settings)
-        self.project_settings_button.pressed.connect(self.open_project_settings)
+        self.exit_button.released.connect(self.close)
+        self.settings_button.released.connect(self.show_settings)
+        self.connection_status = None
 
-        self.open_dir_button.released.connect(self.open_directory)
-        #self.version_list.currentTextChanged.connect(self.task_item_doubleclicked)
 
-        self.context_id = None
-        self.context_set = False
-        self.gui = 0
-        self.project_root = None
-        self.gui = 1
-        self.center()
-        self.update_trees()
+        self.loading_icon = LoadingIcon()
+        self.load_icon_frame.layout().replaceWidget(self.image_label, self.loading_icon)
+        self.image_label = self.loading_icon
 
-    
-    def open_directory(self):
-        pass
-
-    def item_clicked(self, index):
-        self.my_task_tree.expand(index)
-    
-    def task_item_doubleclicked(self, item):
-        if item.kitsu_item['task_type_for_entity'] == 'Shot':
-            file = self.version_list.currentText().split('/')
-            box = self.action_box_layout
-        elif item.kitsu_item['task_type_for_entity'] == 'Asset':
-            box = self.asset_action_box_layout
-            file = self.asset_version_list.currentText().split('/')
-
-        folder_path = item.get_path()
-
-        # Clear all the layout
-        while box.count():
-            witem = box.takeAt(0)
-            widget = witem.widget()
-            if widget is not None:
-                widget.deleteLater()
-
-        # check all the files and plugins
-        if len(file)>1:
-            file_path = os.path.join(folder_path, file[0], file[1])
-        else:
-            file_path = None
-
-        # add plugin buttons
-        for plugin in self.plugins:
-            if '.'+file[-1].rsplit('.',1)[-1] == plugin.extension:
-                file_path = os.path.join(folder_path, file[0], file[1])
-            for button in plugin.get_push_buttons(item, file_path):
-                box.addWidget(button)
-        return True
-
-    def load_plugins(self):
-        plugin_engine = KitsuConnectPlugins(self)
-        plugins = plugin_engine.get_plugins(os.path.join(self.root_folder, 'plugins'))
-        self.plugins = plugins
-        tree_model = QtGui.QStandardItemModel()
-        rootNode = tree_model.invisibleRootItem()
-        for plugin in plugins:
-            app = QtGui.QStandardItem(plugin.name)
-            app.setEditable(False)
-            rootNode.appendRow(app)
-        self.plugin_tree.setModel(tree_model)
+        self.input_files = None
         
-    def center(self):
-        qr = self.frameGeometry()
-        cp = self.screen().availableGeometry().center()
-        qr.moveCenter(cp)
-        self.move(qr.topLeft())
+        #self.t_task_stat.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
 
-    #def mousePressEvent(self, event):
-    #   self.dragPos = event.globalPosition().toPoint()
+        self.tree_widget.itemDoubleClicked.connect(self.on_item_double_clicked)
+        
+        
 
-    #def mouseMoveEvent(self, event):
-    #   self.move(self.pos() + event.globalPosition().toPoint() - self.dragPos )
-    #   self.dragPos = event.globalPosition().toPoint()
-    #   event.accept()
-    
-    def set_loading(self, load_bool=True):
-        if load_bool:
-            self.stacked_loading_screen.setCurrentIndex(1)
-        else:
-            self.stacked_loading_screen.setCurrentIndex(0)
+        self.file_manager = DropZoneLabel('test', self)
+        self.file_manager.setText(self.file_drop.text())  # Keep the existing text
+        self.file_manager.setGeometry(self.file_drop.geometry())
+        self.file_manager.fileSelected.connect(self.set_files)
 
-    def set_status(self, status, is_running=False):  
-        if is_running:
-            self.loading_icon.setMovie(self.loading_icon_movie)
-        else:
-            self.loading_icon.setMovie(None)
-        self.status.setText(status)
-        #QCoreApplication.processEvents()
-        #QtWidgets.QApplication.processEvents()
+        self.ff_layout.replaceWidget(self.file_drop, self.file_manager)
+        self.file_drop.deleteLater()
+        self.publish_button.released.connect(self.launch_publisher)
+        #self.file_drop.mouseDoubleClickEvent.connect(self.file_browse)
+        
+
+        self.ks.check_connection()
+        self.show_only_my_tasks.stateChanged.connect(self.build_tasks_tree)
 
 
-        #self.setWindowFlag(Qt.WindowType.FramelessWindowHint)
+    def check_for_updates(self):
+        self.update_log('Checking for updates...')
+        try:
+            response = requests.get(f"https://api.github.com/repos/{self.github_repo}")
+            self.latest_release = response.json()
+            latest_version = self.latest_release['name'].split('v')[-1]
 
-    def open_project_settings(self):
-        if self.good_settings:
-            self.ps = project_settings(self)
-            if self.ps.getInfos():
-                self.ps.show()
-                return
-        else:
-            return
-
-    def build_plugin_shelf(self):
-        layout = self.apps_tab.layout()
-        while layout.count():
-            item = layout.takeAt(0)
-            widget = item.widget()
-            if widget:
-                widget.deleteLater()
+            if latest_version > self.current_version:
+                reply = QMessageBox.question(self, 'Update Available', 
+                                     f"{self.latest_release['name']} is available. Do you want to update?",
+                                     QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes)
+                if reply == QMessageBox.Yes:
+                    self.start_update()
+                else:
+                    return
             else:
-                # If the item is a layout, recursively delete its children
-                sub_layout = item.layout()
-                if sub_layout:
-                    while sub_layout.count():
-                        sub_item = sub_layout.takeAt(0)
-                        sub_widget = sub_item.widget()
-                        if sub_widget:
-                            sub_widget.deleteLater()
+                return
+        except Exception as e:
+            QMessageBox.warning(self, "Update Check Failed", f"Error: {str(e)}")
 
-        for plugin in self.plugins:
-            app_button = QtWidgets.QToolButton()
-            app_button.setText(plugin.name)
-            app_button.setToolButtonStyle(QtCore.Qt.ToolButtonStyle.ToolButtonTextUnderIcon)
-            app_button.setIcon(QtGui.QIcon(plugin.icon))
-            app_button.setIconSize(QtCore.QSize(50,50))
-            app_button.released.connect(plugin.launch)
-            layout.addWidget(app_button)
-            
-    def get_item_file_path(self, item):
-        filepath = None
-        if item.type == 'Sequence':
-            filepath = os.path.join(self.project_root,'shots', item.text())
-        elif item.type == 'Shot':
-            shot = gazu.shot.get_shot(item.id)
-            filepath = os.path.join(self.project_root,'shots', shot['sequence_name'],shot['name'])
-        elif item.type =='Task':
-            task = gazu.task.get_task(item.id)
-            if item.kitsu_item['task_type_for_entity'] == 'Shot':
-                filepath = os.path.join(self.project_root,'shots', task['sequence']['name'], task['entity']['name'], 'project_files',task['task_type']['name'])
-            elif item.kitsu_item['task_type_for_entity'] == 'Asset':
-                filepath = os.path.join(self.project_root,'assets', task['entity']['name'], task['task_type']['name'],'project_files')
-        return filepath
+    def on_update_progress(self, message):
+        self.update_log(message)
 
-    def set_context(self, index):
-
-        item = index.model().itemFromIndex(index)
-        id = item.id
-
-        if item.kitsu_item:
-
-            context = ''
-
-            if item.type == 'Sequence':
-                context = f"{self.project['name']} : {item.text()}".upper()
-                self.shot_info_tab.setVisible(False)
-            elif item.type == 'Shot':
-                shot = gazu.shot.get_shot(id)
-                context = f"{shot['project_name']} : {shot['sequence_name']} : {shot['name']}".upper()
-                self.shot_info_tab.setVisible(False)
-            elif item.type == 'Task':
-                task = gazu.task.get_task(id)
-                if item.kitsu_item['task_type_for_entity'] == 'Shot':
-                    context = f"{task['project']['name']} : {task['sequence']['name']} : {task['entity']['name']} : {task['task_type']['name']}".upper()
-                    self.set_shot_tab(item)
-                elif item.kitsu_item['task_type_for_entity'] == 'Asset':
-                    context = f"{task['project']['name']} : Assets : {task['entity']['name']} : {task['task_type']['name']}".upper()
-                    self.set_asset_tab(item)
-                #self.build_plugin_shelf()
-            self.context_label.setText(context) 
-            self.context_id = id
-            self.context_set = True
-            return True
+    def on_update_finished(self, success, message):
+        if success:
+            QMessageBox.information(self, "Update Successful", message)
         else:
-            self.context_id = None
-            self.context_set = False
-            self.context_label.setText('')
-            self.shot_info_tab.setVisible(False)
+            QMessageBox.warning(self, "Update Failed", message)
+        #self.update_button.setText("Check for Updates")
+        
+        
+    def start_update(self):
+        update_file, _ = QtWidgets.QFileDialog.getSaveFileName(self, "Select Update File", self.latest_release['name'], "Zip Files (*.zip)")
+        if not update_file:
+            return
+        self.updater = Updater(self.github_repo, update_file)
+        self.updater.update_progress.connect(self.on_update_progress)
+        self.updater.update_finished.connect(self.on_update_finished)
+        self.updater.start()
+        
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            # Detect if we're clicking in a resize area
+            self._dragArea = self._detectDragArea(event.pos())
+            if self._dragArea:
+                self._isResizing = True
+                self._dragPosition = event.globalPos()
+                event.accept()
+            else:
+                # Otherwise, assume we're dragging the window
+                self._isDragging = True
+                self.old_position = event.globalPos() - self.frameGeometry().topLeft()
+                event.accept()
+        else:
+            super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if self._isResizing and self._dragArea:
+            # Calculate how much the mouse has moved
+            delta = event.globalPos() - self._dragPosition
+            self._resizeWindow(delta)
+            self._dragPosition = event.globalPos()
+            event.accept()
+        elif self._isDragging:
+            # Move the window if it's being dragged
+            self.move(event.globalPos() - self.old_position)
+            event.accept()
+        else:
+            # Change cursor shape when hovering over edges or corners
+            self._setCursorShape(event.pos())
+            super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            # Stop dragging and resizing
+            self._isResizing = False
+            self._isDragging = False
+            event.accept()
+        else:
+            super().mouseReleaseEvent(event)
+
+    def _detectDragArea(self, pos):
+        """ Detect which area of the window is being clicked for resizing. """
+        rect = self.rect()
+        top, left, right, bottom = rect.top(), rect.left(), rect.right(), rect.bottom()
+        margin = self._resizeMargin
+
+        if left <= pos.x() <= left + margin and top <= pos.y() <= top + margin:
+            return 'top-left'
+        elif right - margin <= pos.x() <= right and top <= pos.y() <= top + margin:
+            return 'top-right'
+        elif left <= pos.x() <= left + margin and bottom - margin <= pos.y() <= bottom:
+            return 'bottom-left'
+        elif right - margin <= pos.x() <= right and bottom - margin <= pos.y() <= bottom:
+            return 'bottom-right'
+        elif left <= pos.x() <= left + margin:
+            return 'left'
+        elif right - margin <= pos.x() <= right:
+            return 'right'
+        elif top <= pos.y() <= top + margin:
+            return 'top'
+        elif bottom - margin <= pos.y() <= bottom:
+            return 'bottom'
+        return None
+
+    def _resizeWindow(self, delta):
+        """ Resize the window based on the mouse movement delta. """
+        if self._dragArea == 'right':
+            self.setGeometry(self.x(), self.y(), self.width() + delta.x(), self.height())
+        elif self._dragArea == 'bottom':
+            self.setGeometry(self.x(), self.y(), self.width(), self.height() + delta.y())
+        elif self._dragArea == 'bottom-right':
+            self.setGeometry(self.x(), self.y(), self.width() + delta.x(), self.height() + delta.y())
+        elif self._dragArea == 'left':
+            self.setGeometry(self.x() + delta.x(), self.y(), self.width() - delta.x(), self.height())
+        elif self._dragArea == 'top':
+            self.setGeometry(self.x(), self.y() + delta.y(), self.width(), self.height() - delta.y())
+        elif self._dragArea == 'top-left':
+            self.setGeometry(self.x() + delta.x(), self.y() + delta.y(), self.width() - delta.x(), self.height() - delta.y())
+        elif self._dragArea == 'top-right':
+            self.setGeometry(self.x(), self.y() + delta.y(), self.width() + delta.x(), self.height() - delta.y())
+        elif self._dragArea == 'bottom-left':
+            self.setGeometry(self.x() + delta.x(), self.y(), self.width() - delta.x(), self.height() + delta.y())
+
+    def _setCursorShape(self, pos):
+        """ Change the cursor shape based on the drag area detected. """
+        area = self._detectDragArea(pos)
+        if area in ['top-left', 'bottom-right']:
+            self.setCursor(Qt.SizeFDiagCursor)
+        elif area in ['top-right', 'bottom-left']:
+            self.setCursor(Qt.SizeBDiagCursor)
+        elif area in ['left', 'right']:
+            self.setCursor(Qt.SizeHorCursor)
+        elif area in ['top', 'bottom']:
+            self.setCursor(Qt.SizeVerCursor)
+        else:
+            self.setCursor(Qt.ArrowCursor)            
+
+    def set_files(self, files):
+        self.input_files = sorted(files)
+        self.update_log('Selected '+str(len(files))+' files')
+        if len(files)>1:
+            self.file_list_text = f'{str(len(files))} files\n\n{os.path.basename(files[0])}\n[...]\n{os.path.basename(files[-1])}'
+        else:
+            self.file_list_text = f'{os.path.basename(files[0])}'
+
+        self.t_worker = T_Extractor(self, files[0])
+        self.t_worker.log_update.connect(self.update_log)          # Start the worker's run method when the thread starts
+        self.t_worker.finished.connect(self.set_thumbnail) 
+        self.t_worker.start()
+
+        self.check_button_enable()
+
+    def set_thumbnail(self, thumbnail):
+        label_width = self.file_manager.width()
+        label_height = self.file_manager.height()
+
+        # Scale the pixmap to fit inside the QLabel's dimensions
+        scaled_pixmap = thumbnail.scaled(label_width, label_height, Qt.AspectRatioMode.KeepAspectRatio)
+        painter = QtGui.QPainter(scaled_pixmap)
+
+        # Set the pen color for the border to black
+        border_pen = QtGui.QPen(QtGui.QColor("black"))
+        painter.setPen(border_pen)
+
+        # Define the text with potential newlines
+        text = str(self.file_list_text)
+
+        # Split the text into lines
+        lines = text.split('\n')
+
+        # Get the bounding rectangle of the pixmap
+        rect = scaled_pixmap.rect()
+
+        # Calculate the initial vertical position to center the text
+        line_height = painter.fontMetrics().height()  # Get the height of a single line of text
+        total_height = line_height * len(lines)  # Total height of all lines
+        start_y = (rect.height() - total_height) // 2  # Centering Y position
+
+        # Draw the outline by drawing the text in black at slightly offset positions
+        offsets = [-1, 0, 1]  # Offsets for x and y directions
+
+        for i, line in enumerate(lines):
+            # Calculate the position for each line
+            
+            i=i+1
+            x = (rect.width() - painter.boundingRect(rect, 0, line).width()) // 2  # Centering X
+            y = start_y + i * line_height  # Calculate Y position for the current line
+
+            # Draw the outline for each line
+            painter.setPen(QtGui.QColor("black"))
+            for dx in offsets:
+                for dy in offsets:
+                    if dx != 0 or dy != 0:  # Avoid drawing in the center again
+                        painter.drawText(x + dx, y + dy, line)
+
+            # Set the pen color for the text to white
+            painter.setPen(QtGui.QColor("white"))
+
+            # Draw the text on top in white
+            painter.drawText(x, y, line)
+
+        # End painting
+        painter.end()
+
+        self.file_manager.setPixmap(scaled_pixmap)
+        
+     
+    def find_or_create_child(self, parent_item, child_name, thumbnail=None):
+        """ Helper function to find a child with the given name or create a new one """
+        for i in range(parent_item.childCount()):
+            child = parent_item.child(i)
+            if child.text(0) == child_name:
+                return child
+
+        # If the child does not exist, create and add it
+        new_child = QtWidgets.QTreeWidgetItem([child_name])
+        parent_item.addChild(new_child)
+        return new_child
+
+    def on_item_double_clicked(self, item, column):
+        # Print the stored context_id if it's a leaf item (Task level)
+        context_id = item.data(1, 0)
+        if context_id:
+            self.set_context(context_id)
+        else:
+            self.set_context()
+
+    def check_button_enable(self):
+        if self.context and self.input_files:
+            self.publish_button.setEnabled(True)
+        else:
+            self.publish_button.setEnabled(False)
+
+    def set_context(self, context_id=None):
+        if context_id:
+            self.update_log(f"Setting Context ID: {context_id}")
+            self.t_context.setText(context_id)
+            self.context = context_id
+        else:
+            self.t_context.setText('')
+            self.context = None
+        self.check_button_enable()
+
+    def build_tasks_tree(self):
+
+        
+        if self.thread is not None and self.thread.isRunning():
+            self.is_scanning = False
+
+            self.thread.quit()  # Stop the thread's event loop
+            self.thread.wait()  # Wait until the thread has finished
+
+        self.is_scanning = True
+        self.thread.start()
+
+
+    def refresh_tree(self):
+        self.tree_widget.clear()
+        self.t_task_stat.clear()
+        self.image_label.setVisible(True)
+
+        self.update_log('')
+        self.update_log('Refreshing task list')
+
+        if not self.is_scanning:
+            self.update_log('User interupted task loading !', 'red')
             return False
-            #self.apps_tab.setVisible(False)
 
-    def get_asset_path(self):
-        index = self.asset_tree.currentIndex()
-        item = self.asset_tree_model.itemFromIndex(index)
-        try:
-            self.project_root = self.project['data']['project_root']
-            asset = gazu.asset.get_asset(item.whatsThis())
-            asset_path = os.path.join(self.project_root,'assets', asset['name'])
-            return asset_path
-        except:
-            return None
+        for stat in reversed(gazu.task.all_task_statuses()):
+            self.t_task_stat.addItem(stat['name'])
+            self.t_task_stat.setCurrentIndex(0)
 
-# Right click menu triggers for assets            
-    def show_asset_path(self):
-        asset_path = self.get_asset_path()
-        msg_box = QtWidgets.QMessageBox()
-        if asset_path:
-            msg_box.setWindowTitle('file path')
-            msg_box.setText(asset_path)
-            #msg_box.setIcon(QtWidgets.QMessageBox.Icon.Information)
-        else:
-            msg_box.setWindowTitle('No project root')
-            msg_box.setText('Cannot resolve project root')
-            msg_box.setIcon(QtWidgets.QMessageBox.Icon.Critical) 
-        msg_box.setStandardButtons(QtWidgets.QMessageBox.StandardButton.Ok)
-        return msg_box.exec()
+
+        if self.connection_status:
+            if self.show_only_my_tasks.isChecked():
+                tasks = gazu.user.all_tasks_to_do()
+            else:
+                projects = gazu.project.all_open_projects()  # Retrieves all open projects
+                # Step 3: Get all tasks for each project
+                tasks = []  # Initialize a list to store all tasks
+
+                for project in projects:
+                    # Retrieve tasks for the current project
+                    g_tasks = gazu.task.all_tasks_for_project(project)
+                    tasks.extend(g_tasks)  # Add tasks to the all_tasks list
+
+            
+            self.update_log('Found '+str(len(tasks))+' tasks.\nGathering Kitsu informations...')
+            if len(tasks)>40:
+                self.update_log("This may take a while...",'orange')
+
+            data = []
+            for task in tasks:
+                if not self.is_scanning:
+                    self.update_log('User interupted task loading !', 'red')
+                    self.image_label.setVisible(False)
+                    return False
+                task = gazu.task.get_task(task)
+                try:
+                    seq = task['sequence']['name']
+                except:
+                    seq = task['entity_type']['name']
+                
+                if seq is None:
+                    seq = task['entity_type_name']
+                dd = {
+                    'project': task['project']['name'],
+                    'type': task['task_type']['for_entity'],
+                    'seq': seq,
+                    'element': task['entity']['name'],
+                    'task': task['task_type']['name'],
+                    'context_id': task['id'],
+                    'preview_id': task['entity']['preview_file_id'],
+                    'task_preview': task['last_preview_file_id']
+                }
+                data.append(dd)
+
+            root_items = {}
+            self.update_log('Building Tree View...')
+            for item_data in data:
+                if not self.is_scanning:
+                    self.update_log('User interupted task loading !', 'red')
+                    self.image_label.setVisible(False)
+                    return False
+                # Create hierarchy: Project > Type > Sequence > Element > Task
+                project_name = item_data.get('project', 'Unknown Project')  # Add a project key
+                type_name = item_data['type']
+                seq_name = item_data['seq']
+                element_name = item_data['element']
+                task_name = item_data['task']
+                context_id = item_data['context_id']
+                preview_id = item_data['preview_id']
+
+
+                # Create or get the Project level item
+                if project_name not in root_items:
+                    project_item = QtWidgets.QTreeWidgetItem([project_name])
+                    self.tree_widget.addTopLevelItem(project_item)
+                    root_items[project_name] = {}
+                
+                project_item = self.tree_widget.findItems(project_name, Qt.MatchExactly | Qt.MatchRecursive)[0]
+
+                # Create or get the Type level item
+                if type_name not in root_items[project_name]:
+                    type_item = QtWidgets.QTreeWidgetItem([type_name])
+                    project_item.addChild(type_item)
+                    root_items[project_name][type_name] = type_item
+                else:
+                    type_item = root_items[project_name][type_name]
+
+                # Create or get the Sequence level item
+                seq_item = self.find_or_create_child(type_item, seq_name)
+
+                # Create or get the Element level item
+                element_item = self.find_or_create_child(seq_item, element_name)
+
+                temp_file = tempfile.NamedTemporaryFile(delete=False, prefix=element_name,suffix='.png')  # Keep the file after closing
+                image = None
+                try:
+                    gazu.files.download_preview_file_thumbnail(preview_id, temp_file.name)  # Use temp_file.name              
+                    image = QtGui.QImage(temp_file.name)  # Use temp_file.name to read the image
+                except:
+                    image = QtGui.QImage(16, 9, QtGui.QImage.Format.Format_ARGB32)
+                    image.fill(Qt.transparent)
+
+                
+                element_item.setData(0,1, image.scaled(48,27,Qt.AspectRatioMode.KeepAspectRatioByExpanding))
+                temp_file.close()
+                os.remove(temp_file.name)
+
+
+                # Create the Task level item
+                task_item = QtWidgets.QTreeWidgetItem([task_name])
+                task_item.setData(1, 0, context_id)
+
+
+                # Add Task item under the Element level
+                element_item.addChild(task_item)
+
+                temp_file = tempfile.NamedTemporaryFile(delete=False, prefix=element_name+task_name,suffix='.png')  # Keep the file after closing
+
+                if item_data['task_preview']:
+                    try:
+                        gazu.files.download_preview_file_thumbnail(item_data['task_preview'], temp_file.name)  # Use temp_file.name              
+                        image = QtGui.QImage(temp_file.name)  # Use temp_file.name to read the image
+                    except:
+                        image = QtGui.QImage(16, 9, QtGui.QImage.Format.Format_ARGB32)
+                        image.fill(Qt.transparent)
+                else:
+                    image = QtGui.QImage(16, 9, QtGui.QImage.Format.Format_ARGB32)
+                    image.fill(Qt.transparent)
+
+                task_item.setData(0,1, image.scaled(48,27,Qt.AspectRatioMode.KeepAspectRatioByExpanding))
+                temp_file.close()
+                os.remove(temp_file.name)
     
-    def open_asset_path(self):
-        url = QtCore.QUrl.fromLocalFile(self.get_asset_path())
-        QtGui.QDesktopServices.openUrl(url)
+            self.update_log('Task Tree Refreshed !', 'green')
+            self.update_log('')
+            self.image_label.setVisible(False)
 
-    def open_file_in_browser(self,file):
-        url = QtCore.QUrl.fromLocalFile(file)
-        QtGui.QDesktopServices.openUrl(url)
 
-    def task_right_click_menu(self, position):
-        menu = QtWidgets.QMenu()
-        menu.addAction('Get asset path', self.show_asset_path)
-        menu.addAction('Open in browser', self.open_asset_path)
-        menu.exec(self.asset_tree.viewport().mapToGlobal(position))
+    def show_settings(self):
+        self.update_log('Open Connection Settings')
+        self.ks.show()
 
-    def asset_right_click_menu(self, position):
-        menu = QtWidgets.QMenu()
-        menu.addAction('Get asset path', self.show_asset_path)
-        menu.addAction('Open in browser', self.open_asset_path)
-        menu.exec(self.asset_tree.viewport().mapToGlobal(position))
-
-    def launch_app(self, app, context_id):
-        subprocess.call(app['exec'], env=app['environ'])
-
-    # Right Click Menu for tasks
-    def task_right_click_menu(self, position):
-        menu = QtWidgets.QMenu()
-
-        index = self.my_task_tree.currentIndex()
-        item = self.my_task_tree_model.itemFromIndex(index)
-        
-        if item:
-            if not item.whatsThis().startswith('FILE:'):
-                menu.addAction('Open in Browser', lambda: self.open_file_in_browser(self.get_item_file_path(item)))
-
-            self.set_context(index)
-
-        for plugin in self.plugins:
-            try:
-                icon = QtGui.QIcon(plugin.icon)
-                plugin.tree_right_click_action(menu, icon=icon)
-            except Exception as eee:
-                print(eee)
-                pass
-
-            
-                
-        #    for app in self.plugin_settings:
-        #        menu.addAction('Launch '+app, lambda: self.launch_app(self.plugin_settings[app], item.whatsThis()))
-            #menu.addAction('Get asset path', self.show_asset_path)
-            #menu.addAction('Open in browser', self.open_asset_path)
-
-        
-        menu.exec(self.my_task_tree.viewport().mapToGlobal(position))
-
-    def set_projects(self):
-        project_list = [project['name'] for project in gazu.user.all_open_projects()]
-        self.project_box.clear()
-        self.project_box.addItems(project_list)
-
-    def set_shot_tab(self, item):
-        task = item.kitsu_item
-        shot = gazu.shot.get_shot(task['entity_id'])
-
-        self.shot_info_name.setText(shot['name'])
-        self.shot_info_id.setText(shot['id'])
-
-        try:
-            self.shot_info_frames.setText(str(shot['nb_frames']))
-        except:
-            pass
-        try:
-            self.shot_info_framein.setText(str(shot['frame_in']))
-        except:
-            try:
-                self.shot_info_framein.setText(str(shot['data']['frame_in']))
-            except:
-                self.shot_info_framein.setText('?')
-        try:
-            self.shot_info_frameout.setText(str(shot['frame_out']))
-        except:
-            try:
-                self.shot_info_frameout.setText(str(shot['data']['frame_out']))
-            except:
-                self.shot_info_frameout.setText('?')
-        try:
-            self.shot_info_fps.setText(str(shot['fps']))
-        except:
-            try:
-                self.shot_info_fps.setText(str(shot['data']['fps']))
-            except:
-                self.shot_info_fps.setText('?')
-        try:
-            self.shot_info_format.setText(shot['data']['resolution'])
-        except:
-            self.shot_info_format.setText('?')
-
-        img_path = os.path.join(root_folder, '.cache_images', shot['project_name'], 'shots',shot['sequence_name'], shot['name']+'_preview.jpeg')
-        pixmap = QtGui.QPixmap(img_path)
-        self.shot_info_image.setPixmap(pixmap)
-
-        # get versions
-        if self.project_root:
-            version_folder = self.get_item_file_path(item)
-            self.version_list.currentTextChanged.connect(lambda: None)
-
-            self.version_list.clear()
-            items = []
-
-            for version in os.listdir(version_folder):
-                file_path = os.path.join(version_folder, version)
-
-                # add plugin buttons
-                for plugin in self.plugins:
-                    if os.path.isdir(file_path):
-                        for file in os.listdir(file_path):
-                            if '.'+file.rsplit('.',1)[-1] == plugin.extension:
-                                items.append(os.path.basename(file_path)+'/'+file)
-
-            items.sort(reverse=True)
-            self.version_list.currentTextChanged.disconnect()
-            
-            self.task_item_doubleclicked(item)
-            self.version_list.clear()
-            self.version_list.currentTextChanged.connect(lambda: self.task_item_doubleclicked(item))
-            self.version_list.addItems(items)
-            
-            
-            self.asset_info_tab.setVisible(False)
-            self.shot_info_tab.setVisible(True)
-            
+    def update_log(self, message, color=None):
+        if color:
+            self.log_view.append(f'<p style="color:{color};">'+message+'</p> ')
         else:
-            dlg = QtWidgets.QMessageBox(self)
-            dlg.setWindowTitle('No Project Root')
-            dlg.setText("There is no project root set on the project.\nPlease set a project root")
-            button = dlg.exec()
+            self.log_view.append(message)  # Append message to log view
 
-    def set_asset_tab(self, item):
-        task = item.kitsu_item
-        asset =  gazu.asset.get_asset(task['entity_id'])
-
-        self.asset_info_name.setText(asset['name'])
-        self.asset_info_id.setText(asset['id'])
-
-        img_path = os.path.join(root_folder, '.cache_images', asset['project_name'], 'assets', asset['name']+'_preview.jpeg')
-        pixmap = QtGui.QPixmap(img_path)
-        self.asset_info_image.setPixmap(pixmap)
-
-        # get versions
-        if self.project_root:
-            version_folder = self.get_item_file_path(item)
-            self.asset_version_list.currentTextChanged.connect(lambda: None)
-
-            self.asset_version_list.clear()
-            items = []
-
-            if not os.path.exists(version_folder):
-                os.makedirs(version_folder)
+        self.log_view.moveCursor(QtGui.QTextCursor.End)
 
 
-            for version in os.listdir(version_folder):
-                file_path = os.path.join(version_folder, version)
+    def launch_publisher(self):
+        self.convert()
 
-                # add plugin buttons
-                for plugin in self.plugins:
-                    if os.path.isdir(file_path):
-                        for file in os.listdir(file_path):
-                            if '.'+file.rsplit('.',1)[-1] == plugin.extension:
-                                items.append(os.path.basename(file_path)+'/'+file)
+    def publish_file_to_kitsu(self):
 
-            items.sort(reverse=True)
-            self.asset_version_list.currentTextChanged.disconnect()
-        
-            self.task_item_doubleclicked(item)
-            self.asset_version_list.clear()
-            self.asset_version_list.currentTextChanged.connect(lambda: self.task_item_doubleclicked(item))
-            self.asset_version_list.addItems(items)
-            
-            
-            self.shot_info_tab.setVisible(False)
-            self.asset_info_tab.setVisible(True)
-        else:
-            dlg = QtWidgets.QMessageBox(self)
-            dlg.setWindowTitle('No Project Root')
-            dlg.setText("There is no project root set on the project.\nPlease set a project root")
-            button = dlg.exec()
+        try:
+            status = gazu.task.get_task_status_by_name(self.t_task_stat.currentText())
+            task = gazu.task.get_task(self.context)
+            file_string = '\n\n<hr><b><u>FILE :</b></u><i>\n' + str(self.output_file) + '</i>\n'
+            comment = gazu.task.add_comment(task, status, self.t_comment.toPlainText()+file_string)
 
-    def update_trees(self):
-        self.update_task_tree()
-        self.update_file_tree()
+            preview_file = gazu.task.add_preview(
+                    task,
+                    comment,
+                    self.output_file
+                )
 
-    def update_file_tree(self):
-        if not self.project_root:
-            return 
-        if not os.path.exists(self.project_root):
+            # Remove the temporary playblast file
+            if os.path.exists(self.output_file):
+                os.remove(self.output_file)
+            return True
+        except Exception as eee:
+            self.update_log(f'<span style="color:red;">Cannot Publish File:\n\n</span>{str(eee)}')
+            return False
+        self.progress_bar.setValue(80)
+
+    def convert(self):
+        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
+        self.output_file = temp_file.name
+
+        if not self.input_files or not self.output_file:
+            QtWidgets.QMessageBox.critical(self, "Error", "Please select input and output files")
             return
 
-
-        model = QtGui.QFileSystemModel()
-        model.setRootPath(self.project_root)
-        model.sort(0, Qt.SortOrder.AscendingOrder)
-        sorting_model = QtCore.QSortFilterProxyModel()
-        sorting_model.setSourceModel(model)
-
-        self.files_tree.header().setSectionResizeMode(QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
-        
-        self.files_tree.setModel(sorting_model)
-        self.files_tree.setRootIndex(sorting_model.mapFromSource(model.index(self.project_root)))
-        #self.files_tree.header().setSortIndicator(0, endingOrder)
-        self.files_tree.setSortingEnabled(True)
-        self.files_tree.resizeColumnToContents(0)
-        self.files_tree.setAcceptDrops(True)
-
-    def update_task_tree(self):
-        
-        if not self.good_settings:
-            return
-        self.set_status('Updating shot tree ...', True)
-        self.set_loading()
-
-        self.project = gazu.project.get_project_by_name(self.project_box.currentText())
         try:
-            self.project_root = self.project['data']['project_root']
-        except:
-            self.project_root = None
+            fps = float(self.fps_entry.text().replace(',', '.'))
+            if fps <= 0:
+                QtWidgets.QMessageBox.critical(self, "Error", f"FPS must be a positive number: {e}")
+                return
+        except ValueError as e:
+            QtWidgets.QMessageBox.critical(self, "Error", f"Invalid FPS value: {e}")
+            return
 
-        self.project_root_label.setText(str(self.project_root))
+        self.progress_bar.setValue(0)  # Reset progress bar
+        self.progress_bar.setMaximum(100)  # Set maximum for progress bar
 
-        self.my_task_tree_model = QtGui.QStandardItemModel()
-        rootNode = self.my_task_tree_model.invisibleRootItem()
+        self.publish_button.setEnabled(False)  # Disable the Convert button
+        self.worker = FFmpegWorker(self.input_files, self.output_file, fps)
+        self.worker.progress.connect(self.update_progress)
+        self.worker.finished.connect(self.on_finished)
+        self.worker.log_update.connect(self.update_log)  # Connect log update signal
+        self.worker.start()  # Start the thread
 
-        task_list = gazu.user.all_tasks_to_do()
-        sequences = {}
+    def update_progress(self, frame):
+        # Update the progress bar based on the number of frames processed
+        self.progress_bar.setValue(frame)
+        if frame > 0 :
+            self.update_log('Exporting frame: ' + str(frame))
 
-        for task in task_list:
-            
-            if task['project_name'] == self.project_box.currentText():
-                try:
-                    sequences[task['sequence_name']].append(task)
-                except:
-                    sequences[task['sequence_name']] = [task]
+    def on_finished(self):
+        self.update_log(f'Uploaded Preview File !!!')
+        #QtWidgets.QMessageBox.information(self, "Success", "Conversion completed successfully!")
+        self.progress_bar.setValue(100)  # Set progress bar to complete
+        self.publish_button.setEnabled(True)  # Re-enable the Convert button
+        self.publish_file_to_kitsu()
 
-        for sequence in sequences:
-            task_list = sequences[sequence]
-            shots = {}
-            for task in task_list:
-                try:
-                    shots[task['entity_name']].append(task)
-                except:
-                    shots[task['entity_name']] = [task]
 
-            if sequence == None:
-                sequence = 'ASSETS TASKS'
-
-            sequence_item = kitsu_tree_item(self.project_root, sequence)
-
-            for x in gazu.shot.all_sequences_for_project(self.project):
-                if x['name'] == sequence:
-                    sequence_item.kitsu_item = x
-                    sequence_item.id = x['id']
-                    sequence_item.type = x['type']
-            sequence_item.setIcon(self.sequence_icon)
-            
-            sequence_item.setEditable(False)
-            rootNode.appendRow(sequence_item)
-
-            for shot in shots:
-                shot_item = kitsu_tree_item(self.project_root, shot)
-                shot_item.id = shots[shot][0]['entity_id']
-                shot_kitsu = gazu.entity.get_entity(shot_item.id)
-                shot_item.type = shot_kitsu['type'] 
-                
-                
-                shot_item.kitsu_item = shot_kitsu
-                try:
-                    preview_id = shot_kitsu['preview_file_id']
-                    img_file_path = os.path.join(root_folder,'.cache_images', self.project_box.currentText(),'shots',sequence,shot+'_preview.jpeg')
-                    #print(img_file_path)
-                    os.makedirs(os.path.dirname(img_file_path), exist_ok=True)
-
-                    #thumnail_id = shot_kitsu.keys()
-                    #print(thumnail_id)
-                    #print(self.kitsu_host.text()+'/api/pictures/originals/preview-files/'+preview_id+'.png')
-
-                    gazu.files.download_preview_file_thumbnail(preview_id, img_file_path)
-                    image = QtGui.QImage(img_file_path)
-
-                except:
-                    image = QtGui.QImage(16, 9, QtGui.QImage.Format.Format_RGB32)
-
-                shot_item.setData(image.scaled(64,27,Qt.AspectRatioMode.KeepAspectRatioByExpanding),Qt.ItemDataRole.DecorationRole)
-                shot_item.setEditable(False)
-                sequence_item.appendRow(shot_item)
-
-                for task in shots[shot]:
-
-                    if self.gui:
-                        QCoreApplication.processEvents()
-                    if task['project_name'] == self.project_box.currentText():
-                        task_item = kitsu_tree_item(self.project_root, task['task_type_name'])
-                        task_item.id = task['id']
-                        task_item.type = task['type']
-                        task_item.kitsu_item = task
-                        task_item.setEditable(False)
-                        task_item.setIcon(self.task_icon)
-                        shot_item.appendRow(task_item)
-                        if self.project_root != None:
-                            folder_path = os.path.join(self.project_root, 'shots',sequence,shot,'project_files',task['task_type_name'])
-                            os.makedirs(folder_path, exist_ok=True)
-
-        self.my_task_tree.setModel(self.my_task_tree_model)
-        self.set_status('Tree refreshed !', False)
-        self.set_loading(False)
-
-if __name__ == '__main__':
+if __name__ == "__main__":
     app = QtWidgets.QApplication(sys.argv)
     window = kitsu_connect()
     window.show()
-    app.exec()
-    #sys.exit(app.exec())
+    sys.exit(app.exec_())
